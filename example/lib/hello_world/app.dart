@@ -3,6 +3,8 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_background_geolocation/flutter_background_geolocation.dart' as bg;
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:hive_flutter/adapters.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../config/ENV.dart';
@@ -59,6 +61,11 @@ class _HelloWorldPageState extends State<HelloWorldPage> {
       throw Exception('must have org and username');
     }
     debugPrint('orgName=$orgname;username=$username');
+    try {
+      await Hive.initFlutter();
+    } catch (e) {
+      prefs.setString('initflutterfail', 'last:${DateTime.now()}');
+    }
 
     // Fetch a Transistor demo server Authorization token for tracker.transistorsoft.com.
     bg.TransistorAuthorizationToken token =
@@ -135,11 +142,75 @@ class _HelloWorldPageState extends State<HelloWorldPage> {
   }
 
   void _onMotionChange(bg.Location location) {
-    print('[motionchange] - $location');
+    if (location.isMoving) {
+      print('[motionchange-moving] - $location');
+    } else {
+      print('[motionchange-stopped] - $location');
+    }
   }
 
-  void _onActivityChange(bg.ActivityChangeEvent event) {
+  Future<void> _onActivityChange(bg.ActivityChangeEvent event) async {
+    // ** shaking when device locked still triggers this callback.
     print('[activitychange] - $event');
+    try {
+      var box = await Hive.openBox('testBox');
+      String prevValue = box.get('activity', defaultValue: '?');
+
+      String firstTime = box.get('firstTime', defaultValue: 'UNLOCKEDBOXdefaultValueFirstTime');
+      print('UNLfirstTIme=$firstTime');
+      if (firstTime == 'UNLOCKEDBOXdefaultValueFirstTime') {
+        box.put('firstTime', DateTime.now().toString());
+      }
+      box.put('activity', event.toString());
+      box.put('prevActivity', prevValue);
+      /*
+      box.watch().listen((event) {
+        print('UNlockedboxevent: ${event.key}: ${event.value}');
+      });
+
+       */
+
+      var lockedBox = await openLockedBox();
+      String prevValue2 = lockedBox.get('activity', defaultValue: '?');
+      lockedBox.put('activity', event.toString());
+      lockedBox.put('prevActivity', prevValue2);
+      /*
+      lockedBox.watch().listen((event) {
+        print('lockedboxevent: ${event.key}: ${event.value}');
+      });
+
+       */
+      String firstTimeLocked = lockedBox.get('firstTime', defaultValue: 'LOCKEDBOXdefaultValueFirstTime');
+      print('LfirstTIme=$firstTimeLocked');
+
+      /// see https://github.com/isar/hive/issues/192
+      /// Recovering corrupted box.
+      if (firstTimeLocked == 'LOCKEDBOXdefaultValueFirstTime') {
+        lockedBox.put('firstTime', DateTime.now().toString());
+      }
+      await lockedBox.close();
+      await box.close();
+    } catch (e) {
+      print('---**-----');
+      print(e.toString());
+    }
+  }
+
+  Future<Box> openLockedBox() async {
+    const secureStorage = FlutterSecureStorage();
+    String encryptionKey = await secureStorage.read(key: 'hiveEncryptKey') ?? 'null';
+    if (encryptionKey == 'null') {
+      bool containsKey = await secureStorage.containsKey(key: 'hiveEncryptKey');
+      print('containsKey=$containsKey');
+    }
+    if (encryptionKey.isEmpty) {
+      final key = Hive.generateSecureKey();
+      encryptionKey = base64UrlEncode(key);
+      await secureStorage.write(key: 'hiveEncryptKey', value: encryptionKey);
+    }
+    final realKey = base64Url.decode(encryptionKey);
+
+    return await Hive.openBox('lockedbox', encryptionCipher: HiveAesCipher(realKey));
   }
 
   void _onHttp(bg.HttpEvent event) async {
