@@ -1,18 +1,15 @@
-import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
 import 'dart:async';
-
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:flutter_background_geolocation/flutter_background_geolocation.dart'
-    as bg;
-import '../app.dart';
-import '../config/ENV.dart';
-
 ////
 // For pretty-printing locations as JSON
 // @see _onLocation
 //
 import 'dart:convert';
+
+import 'package:flutter/material.dart';
+import 'package:flutter_background_geolocation/flutter_background_geolocation.dart' as bg;
+import 'package:shared_preferences/shared_preferences.dart';
+
+import '../config/ENV.dart';
 
 JsonEncoder encoder = new JsonEncoder.withIndent("     ");
 
@@ -26,7 +23,7 @@ class HelloWorldApp extends StatelessWidget {
     return new MaterialApp(
       title: 'BackgroundGeolocation Demo',
       theme: theme.copyWith(
-          colorScheme: theme.colorScheme.copyWith(secondary:Colors.black),
+          colorScheme: theme.colorScheme.copyWith(secondary: Colors.black),
           primaryTextTheme: Theme.of(context).primaryTextTheme.apply(
                 bodyColor: Colors.black,
               )),
@@ -65,18 +62,17 @@ class _HelloWorldPageState extends State<HelloWorldPage> {
 
   Future _initPlatformState() async {
     SharedPreferences prefs = await _prefs;
-    String? orgname = prefs.getString("orgname");
-    String? username = prefs.getString("username");
+    String orgname = prefs.getString("orgname") ?? '';
+    String username = prefs.getString("username") ?? '';
 
-    // Sanity check orgname & username:  if invalid, go back to HomeApp to re-register device.
-    if (orgname == null || username == null) {
-      return runApp(HomeApp());
+    if (orgname.isEmpty || username.isEmpty) {
+      throw Exception('must have org and username');
     }
+    debugPrint('orgName=$orgname;username=$username');
 
     // Fetch a Transistor demo server Authorization token for tracker.transistorsoft.com.
     bg.TransistorAuthorizationToken token =
-        await bg.TransistorAuthorizationToken.findOrCreate(
-            orgname, username, ENV.TRACKER_HOST);
+        await bg.TransistorAuthorizationToken.findOrCreate(orgname, username, ENV.TRACKER_HOST);
 
     // 1.  Listen to events (See docs for all 12 available events).
     bg.BackgroundGeolocation.onLocation(_onLocation, _onLocationError);
@@ -161,30 +157,6 @@ class _HelloWorldPageState extends State<HelloWorldPage> {
     });
   }
 
-  // Manually fetch the current position.
-  void _onClickGetCurrentPosition() {
-    bg.BackgroundGeolocation.getCurrentPosition(
-            persist: true, // <-- do persist this location
-            desiredAccuracy: 0, // <-- desire best possible accuracy
-            timeout: 30, // <-- wait 30s before giving up.
-            samples: 3 // <-- sample 3 location before selecting best.
-            )
-        .then((bg.Location location) {
-      print('[getCurrentPosition] - $location');
-    }).catchError((error) {
-      print('[getCurrentPosition] ERROR: $error');
-    });
-  }
-
-  // Go back to HomeApp.
-  void _onClickHome() {
-    runApp(HomeApp());
-  }
-
-  ////
-  // Event handlers
-  //
-
   void _onLocation(bg.Location location) {
     print('[location] - $location');
 
@@ -218,16 +190,13 @@ class _HelloWorldPageState extends State<HelloWorldPage> {
   void _onAuthorization(bg.AuthorizationEvent event) async {
     print('[${bg.Event.AUTHORIZATION}] = $event');
 
-    bg.BackgroundGeolocation.setConfig(
-        bg.Config(url: ENV.TRACKER_HOST + '/api/locations'));
+    bg.BackgroundGeolocation.setConfig(bg.Config(url: ENV.TRACKER_HOST + '/api/locations'));
   }
 
   void _onProviderChange(bg.ProviderChangeEvent event) {
     print('$event');
 
-    setState(() {
-      _content = encoder.convert(event.toMap());
-    });
+    setState(() => _content = encoder.convert(event.toMap()));
   }
 
   void _onConnectivityChange(bg.ConnectivityChangeEvent event) {
@@ -235,41 +204,29 @@ class _HelloWorldPageState extends State<HelloWorldPage> {
   }
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        leading: IconButton(
-            icon: Icon(Icons.home, color: Colors.black),
-            onPressed: _onClickHome),
-        title: const Text('BG Geo'),
-        foregroundColor: Colors.black,
-        actions: <Widget>[
-          Switch(value: _enabled, onChanged: _onClickEnable),
-        ],
-        backgroundColor: Colors.amberAccent
-      ),
-      body: SingleChildScrollView(child: Text('$_content')),
-      bottomNavigationBar: BottomAppBar(
-          color: Colors.amberAccent,
-          child: Container(
-              padding: const EdgeInsets.only(left: 5.0, right: 5.0),
-              child: Row(
-                  mainAxisSize: MainAxisSize.max,
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: <Widget>[
-                    IconButton(
-                      icon: Icon(Icons.gps_fixed),
-                      onPressed: _onClickGetCurrentPosition,
-                    ),
-                    Text('$_motionActivity · $_odometer km'),
-                    MaterialButton(
-                        minWidth: 50.0,
-                        child: Icon(
-                            (_isMoving) ? Icons.pause : Icons.play_arrow,
-                            color: Colors.white),
-                        color: (_isMoving) ? Colors.red : Colors.green,
-                        onPressed: _onClickChangePace)
-                  ]))),
-    );
-  }
+  Widget build(BuildContext context) => Scaffold(
+        appBar: AppBar(
+            title: const Text('iOS Demo BG Geo'),
+            foregroundColor: Colors.black,
+            actions: <Widget>[
+              Switch(value: _enabled, onChanged: _onClickEnable),
+            ],
+            backgroundColor: Colors.amberAccent),
+        body: SingleChildScrollView(child: Text('$_content')),
+        bottomNavigationBar: BottomAppBar(
+            color: Colors.amberAccent,
+            child: Container(
+                padding: const EdgeInsets.only(left: 5.0, right: 5.0),
+                child: Row(
+                    mainAxisSize: MainAxisSize.max,
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: <Widget>[
+                      Text('$_motionActivity · $_odometer km'),
+                      MaterialButton(
+                          minWidth: 50.0,
+                          child: Icon((_isMoving) ? Icons.pause : Icons.play_arrow, color: Colors.white),
+                          color: (_isMoving) ? Colors.red : Colors.green,
+                          onPressed: _onClickChangePace)
+                    ]))),
+      );
 }

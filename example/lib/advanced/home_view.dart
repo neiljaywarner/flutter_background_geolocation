@@ -1,19 +1,17 @@
-import 'package:flutter/material.dart';
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:flutter_background_geolocation/flutter_background_geolocation.dart' as bg;
 import 'package:background_fetch/background_fetch.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_background_geolocation/flutter_background_geolocation.dart' as bg;
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 
-import '../app.dart';
 import '../config/ENV.dart';
-import 'map_view.dart';
-import 'event_list.dart';
 import './util/dialog.dart' as util;
 import './util/test.dart';
-
+import 'event_list.dart';
+import 'map_view.dart';
 import 'shared_events.dart';
 
 // For pretty-printing location JSON
@@ -55,11 +53,7 @@ class HomeViewState extends State<HomeView> with TickerProviderStateMixin<HomeVi
     _odometer = '0';
     _testModeClicks = 0;
 
-    _tabController = TabController(
-        length: 2,
-        initialIndex: 0,
-        vsync: this
-    );
+    _tabController = TabController(length: 2, initialIndex: 0, vsync: this);
     _tabController?.addListener(_handleTabChange);
 
     initPlatformState();
@@ -69,7 +63,6 @@ class HomeViewState extends State<HomeView> with TickerProviderStateMixin<HomeVi
   void didChangeAppLifecycleState(AppLifecycleState state) {
     print("[home_view didChangeAppLifecycleState] : $state");
     if (state == AppLifecycleState.paused) {
-
       // Do nothing.
       /* For testing location access in background on Android 12.
       new Timer(Duration(seconds: 21), () async {
@@ -77,7 +70,6 @@ class HomeViewState extends State<HomeView> with TickerProviderStateMixin<HomeVi
         print("************ [location] $location");
       });
       */
-
     } else if (state == AppLifecycleState.resumed) {
       if (!_enabled!) return;
 
@@ -89,7 +81,6 @@ class HomeViewState extends State<HomeView> with TickerProviderStateMixin<HomeVi
       }
       _lastRequestedTemporaryFullAccuracy = now;
       bg.BackgroundGeolocation.requestTemporaryFullAccuracy("DemoPurpose");
-
     }
   }
 
@@ -100,7 +91,7 @@ class HomeViewState extends State<HomeView> with TickerProviderStateMixin<HomeVi
 
     // Sanity check orgname & username:  if invalid, go back to HomeApp to re-register device.
     if (orgname == null || username == null) {
-      return runApp(HomeApp());
+      throw Exception('need orgname/username');
     }
 
     _configureBackgroundGeolocation(orgname, username);
@@ -122,35 +113,37 @@ class HomeViewState extends State<HomeView> with TickerProviderStateMixin<HomeVi
     bg.BackgroundGeolocation.onEnabledChange(_onEnabledChange);
     bg.BackgroundGeolocation.onNotificationAction(_onNotificationAction);
 
-    bg.TransistorAuthorizationToken token = await bg.TransistorAuthorizationToken.findOrCreate(orgname, username, ENV.TRACKER_HOST);
+    bg.TransistorAuthorizationToken token =
+        await bg.TransistorAuthorizationToken.findOrCreate(orgname, username, ENV.TRACKER_HOST);
 
     // 2.  Configure the plugin
     bg.BackgroundGeolocation.ready(bg.Config(
-        reset: false,  // <-- lets the Settings screen drive the config rather than re-applying each boot.
-        // Convenience option to automatically configure the SDK to post to Transistor Demo server.
-        transistorAuthorizationToken: token,
-        // Logging & Debug
-        debug: true,
-        logLevel: bg.Config.LOG_LEVEL_VERBOSE,
-        // Geolocation options
-        desiredAccuracy: bg.Config.DESIRED_ACCURACY_NAVIGATION,
-        distanceFilter: 10.0,
-        // Activity recognition options
-        stopTimeout: 5,
-        backgroundPermissionRationale: bg.PermissionRationale(
-          title: "Allow {applicationName} to access this device's location even when the app is closed or not in use.",
-          message: "This app collects location data to enable recording your trips to work and calculate distance-travelled.",
-          positiveAction: 'Change to "{backgroundPermissionOptionLabel}"',
-          negativeAction: 'Cancel'
-        ),
-        // HTTP & Persistence
-        autoSync: true,
-        // Application options
-        stopOnTerminate: false,
-        startOnBoot: true,
-        enableHeadless: true,
-        heartbeatInterval: 60
-    )).then((bg.State state) async {
+            reset: false, // <-- lets the Settings screen drive the config rather than re-applying each boot.
+            // Convenience option to automatically configure the SDK to post to Transistor Demo server.
+            transistorAuthorizationToken: token,
+            // Logging & Debug
+            debug: true,
+            logLevel: bg.Config.LOG_LEVEL_VERBOSE,
+            // Geolocation options
+            desiredAccuracy: bg.Config.DESIRED_ACCURACY_NAVIGATION,
+            distanceFilter: 10.0,
+            // Activity recognition options
+            stopTimeout: 5,
+            backgroundPermissionRationale: bg.PermissionRationale(
+                title:
+                    "Allow {applicationName} to access this device's location even when the app is closed or not in use.",
+                message:
+                    "This app collects location data to enable recording your trips to work and calculate distance-travelled.",
+                positiveAction: 'Change to "{backgroundPermissionOptionLabel}"',
+                negativeAction: 'Cancel'),
+            // HTTP & Persistence
+            autoSync: true,
+            // Application options
+            stopOnTerminate: false,
+            startOnBoot: true,
+            enableHeadless: true,
+            heartbeatInterval: 60))
+        .then((bg.State state) async {
       print('[ready] ${state.toMap()}');
       print('[didDeviceReboot] ${state.didDeviceReboot}');
       if (state.schedule!.isNotEmpty) {
@@ -163,7 +156,7 @@ class HomeViewState extends State<HomeView> with TickerProviderStateMixin<HomeVi
     }).catchError((error) {
       print('[ready] ERROR: $error');
     });
-    
+
     // Fetch currently selected tab.
     SharedPreferences prefs = await _prefs;
     int? tabIndex = prefs.getInt("tabIndex");
@@ -178,17 +171,17 @@ class HomeViewState extends State<HomeView> with TickerProviderStateMixin<HomeVi
 
   // Configure BackgroundFetch (not required by BackgroundGeolocation).
   void _configureBackgroundFetch() async {
-    BackgroundFetch.configure(BackgroundFetchConfig(
-        minimumFetchInterval: 15,
-        startOnBoot: true,
-        stopOnTerminate: false,
-        enableHeadless: true,
-        requiresStorageNotLow: false,
-        requiresBatteryNotLow: false,
-        requiresCharging: false,
-        requiresDeviceIdle: false,
-        requiredNetworkType: NetworkType.NONE
-    ), (String taskId) async {
+    BackgroundFetch.configure(
+        BackgroundFetchConfig(
+            minimumFetchInterval: 15,
+            startOnBoot: true,
+            stopOnTerminate: false,
+            enableHeadless: true,
+            requiresStorageNotLow: false,
+            requiresBatteryNotLow: false,
+            requiresCharging: false,
+            requiresDeviceIdle: false,
+            requiredNetworkType: NetworkType.NONE), (String taskId) async {
       print("[BackgroundFetch] received event $taskId");
       bg.Logger.debug("🔔 [BackgroundFetch start] " + taskId);
       SharedPreferences prefs = await SharedPreferences.getInstance();
@@ -204,16 +197,12 @@ class HomeViewState extends State<HomeView> with TickerProviderStateMixin<HomeVi
           // Fetch current position
           var location = await bg.BackgroundGeolocation.getCurrentPosition(
               samples: 2,
-              maximumAge: 1000 * 10,  // 30 seconds ago
+              maximumAge: 1000 * 10, // 30 seconds ago
               timeout: 30,
               desiredAccuracy: 40,
-              extras: {
-                "event": "background-fetch",
-                "headless": false
-              }
-          );
+              extras: {"event": "background-fetch", "headless": false});
           print("[location] $location");
-        } catch(error) {
+        } catch (error) {
           print("[location] ERROR: $error");
         }
 
@@ -224,8 +213,7 @@ class HomeViewState extends State<HomeView> with TickerProviderStateMixin<HomeVi
             periodic: false,
             forceAlarmManager: false,
             stopOnTerminate: false,
-            enableHeadless: true
-        ));
+            enableHeadless: true));
       }
       bg.Logger.debug("🔔 [BackgroundFetch finish] " + taskId);
       BackgroundFetch.finish(taskId);
@@ -279,13 +267,12 @@ class HomeViewState extends State<HomeView> with TickerProviderStateMixin<HomeVi
     bg.BackgroundGeolocation.playSound(util.Dialog.getSoundId("BUTTON_CLICK"));
 
     bg.BackgroundGeolocation.getCurrentPosition(
-        persist: true,       // <-- do not persist this location
+        persist: true, // <-- do not persist this location
         desiredAccuracy: 40, // <-- desire an accuracy of 40 meters or less
-        maximumAge: 5000,       // <-- Up to 10s old is fine.
-        timeout: 30,         // <-- wait 30s before giving up.
-        samples: 3,           // <-- sample just 1 location
-        extras: {"getCurrentPosition": true}
-    ).then((bg.Location location) {
+        maximumAge: 5000, // <-- Up to 10s old is fine.
+        timeout: 30, // <-- wait 30s before giving up.
+        samples: 3, // <-- sample just 1 location
+        extras: {"getCurrentPosition": true}).then((bg.Location location) {
       print('[getCurrentPosition] - $location');
     }).catchError((error) {
       print('[getCurrentPosition] ERROR: $error');
@@ -297,7 +284,6 @@ class HomeViewState extends State<HomeView> with TickerProviderStateMixin<HomeVi
     bg.BackgroundGeolocation.playSound(util.Dialog.getSoundId("CLOSE"));
     bg.BackgroundGeolocation.stop();
     bg.BackgroundGeolocation.removeListeners();
-    runApp(HomeApp());
   }
 
   ////
@@ -340,7 +326,8 @@ class HomeViewState extends State<HomeView> with TickerProviderStateMixin<HomeVi
   void _onProviderChange(bg.ProviderChangeEvent event) async {
     print('[${bg.Event.PROVIDERCHANGE}] - $event');
 
-    if ((event.status == bg.ProviderChangeEvent.AUTHORIZATION_STATUS_ALWAYS) && (event.accuracyAuthorization == bg.ProviderChangeEvent.ACCURACY_AUTHORIZATION_REDUCED)) {
+    if ((event.status == bg.ProviderChangeEvent.AUTHORIZATION_STATUS_ALWAYS) &&
+        (event.accuracyAuthorization == bg.ProviderChangeEvent.ACCURACY_AUTHORIZATION_REDUCED)) {
       // Supply "Purpose" key from Info.plist as 1st argument.
       bg.BackgroundGeolocation.requestTemporaryFullAccuracy("DemoPurpose").then((int accuracyAuthorization) {
         if (accuracyAuthorization == bg.ProviderChangeEvent.ACCURACY_AUTHORIZATION_FULL) {
@@ -379,15 +366,10 @@ class HomeViewState extends State<HomeView> with TickerProviderStateMixin<HomeVi
 
     // Now that we've initiated a background-task, call .getCurrentPosition()
     try {
-      bg.Location location = await bg.BackgroundGeolocation.getCurrentPosition(
-        samples: 2,
-        timeout: 10,
-        extras: {
-          "event":"heartbeat"
-        }
-      );
+      bg.Location location =
+          await bg.BackgroundGeolocation.getCurrentPosition(samples: 2, timeout: 10, extras: {"event": "heartbeat"});
       print("[heartbeat] getCurrentPosition: $location");
-    } catch(e) {
+    } catch (e) {
       print("[heartbeat] getCurrentPosition ERROR: $e");
     }
     setState(() {
@@ -405,9 +387,8 @@ class HomeViewState extends State<HomeView> with TickerProviderStateMixin<HomeVi
       // Execute an HTTP request to test an async operation completes.
       String url = "${ENV.TRACKER_HOST}/api/devices";
       bg.State state = await bg.BackgroundGeolocation.state;
-      http.read(Uri.parse(url), headers: {
-        "Authorization": "Bearer ${state.authorization?.accessToken}"
-      }).then((String result) {
+      http.read(Uri.parse(url), headers: {"Authorization": "Bearer ${state.authorization?.accessToken}"}).then(
+          (String result) {
         print("[http test] success: $result");
         bg.BackgroundGeolocation.playSound(util.Dialog.getSoundId("TEST_MODE_CLICK"));
         bg.BackgroundGeolocation.stopBackgroundTask(taskId);
@@ -440,7 +421,7 @@ class HomeViewState extends State<HomeView> with TickerProviderStateMixin<HomeVi
 
   void _onNotificationAction(String action) {
     print('[onNotificationAction] $action');
-    switch(action) {
+    switch (action) {
       case 'notificationButtonFoo':
         bg.BackgroundGeolocation.changePace(false);
         break;
@@ -466,30 +447,19 @@ class HomeViewState extends State<HomeView> with TickerProviderStateMixin<HomeVi
           backgroundColor: Colors.amberAccent,
           foregroundColor: Colors.black,
           actions: <Widget>[
-            Switch(value: _enabled!, onChanged: _onClickEnable
-            ),
+            Switch(value: _enabled!, onChanged: _onClickEnable),
           ],
           bottom: TabBar(
               controller: _tabController,
               indicatorColor: Colors.red,
-              tabs: [
-                Tab(icon: Icon(Icons.map)),
-                Tab(icon: Icon(Icons.list))
-              ]
-          )
-      ),
+              tabs: [Tab(icon: Icon(Icons.map)), Tab(icon: Icon(Icons.list))])),
       //body: body,
       body: SharedEvents(
           events: events,
           child: TabBarView(
               controller: _tabController,
-              children: [
-                MapView(),
-                EventList()
-              ],
-              physics: new NeverScrollableScrollPhysics()
-          )
-      ),
+              children: [MapView(), EventList()],
+              physics: new NeverScrollableScrollPhysics())),
       bottomNavigationBar: BottomAppBar(
           color: Colors.amberAccent,
           child: Container(
@@ -505,20 +475,13 @@ class HomeViewState extends State<HomeView> with TickerProviderStateMixin<HomeVi
                     TextButton(
                         child: Text('$_motionActivity · $_odometer km'),
                         onPressed: _onClickTestMode,
-                        style: ButtonStyle(
-                          foregroundColor: MaterialStateProperty.all<Color>(Colors.black)
-                        )
-                    ),
+                        style: ButtonStyle(foregroundColor: MaterialStateProperty.all<Color>(Colors.black))),
                     MaterialButton(
                         minWidth: 50.0,
                         child: Icon((_isMoving!) ? Icons.pause : Icons.play_arrow, color: Colors.white),
                         color: (_isMoving!) ? Colors.red : Colors.green,
-                        onPressed: _onClickChangePace
-                    )
-                  ]
-              )
-          )
-      ),
+                        onPressed: _onClickChangePace)
+                  ]))),
     );
   }
 
@@ -550,11 +513,12 @@ class HomeViewState extends State<HomeView> with TickerProviderStateMixin<HomeVi
     bg.BackgroundGeolocation.setOdometer(0.0).catchError((error) {
       print('************ dispose [setOdometer] ERROR $error');
     });
-
   }
 
   void _handleTabChange() async {
-    if (!_tabController!.indexIsChanging) { return; }
+    if (!_tabController!.indexIsChanging) {
+      return;
+    }
     final SharedPreferences prefs = await _prefs;
     prefs.setInt("tabIndex", _tabController!.index);
   }

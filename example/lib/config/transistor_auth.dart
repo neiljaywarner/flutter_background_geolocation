@@ -1,10 +1,7 @@
-import 'package:flutter/material.dart';
-
+import 'package:flutter_background_geolocation/flutter_background_geolocation.dart' as bg;
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:flutter_background_geolocation/flutter_background_geolocation.dart'
-    as bg;
+
 import 'ENV.dart';
-import '../app.dart';
 
 void _onHttp(bg.HttpEvent event) async {
   switch (event.status) {
@@ -27,7 +24,6 @@ void _onHttp(bg.HttpEvent event) async {
       // forcing the user to re-register for a transistor authorization token.
       prefs.remove("username");
       // Redirect to home page.
-      runApp(HomeApp());
       break;
   }
 }
@@ -47,11 +43,9 @@ class TransistorAuth {
       }
 
       bg.TransistorAuthorizationToken jwt =
-          await bg.TransistorAuthorizationToken.findOrCreate(
-              orgname, username, ENV.TRACKER_HOST);
+          await bg.TransistorAuthorizationToken.findOrCreate(orgname, username, ENV.TRACKER_HOST);
 
-      await bg.BackgroundGeolocation.setConfig(
-          bg.Config(transistorAuthorizationToken: jwt));
+      await bg.BackgroundGeolocation.setConfig(bg.Config(transistorAuthorizationToken: jwt));
       return true;
     } catch (error) {
       print("[ERROR] $error");
