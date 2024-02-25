@@ -1,8 +1,4 @@
 import 'dart:async';
-////
-// For pretty-printing locations as JSON
-// @see _onLocation
-//
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -42,21 +38,15 @@ class HelloWorldPage extends StatefulWidget {
 class _HelloWorldPageState extends State<HelloWorldPage> {
   Future<SharedPreferences> _prefs = SharedPreferences.getInstance();
 
-  late bool _isMoving;
   late bool _enabled;
-  late String _motionActivity;
-  late String _odometer;
   late String _content;
 
   @override
   void initState() {
     super.initState();
     _content = "    Enable the switch to begin tracking.";
-    _isMoving = false;
     _enabled = false;
     _content = '';
-    _motionActivity = 'UNKNOWN';
-    _odometer = '0';
     _initPlatformState();
   }
 
@@ -110,10 +100,7 @@ class _HelloWorldPageState extends State<HelloWorldPage> {
             enableHeadless: true))
         .then((bg.State state) {
       print("[ready] ${state.toMap()}");
-      setState(() {
-        _enabled = state.enabled;
-        _isMoving = state.isMoving!;
-      });
+      setState(() => _enabled = state.enabled);
     }).catchError((error) {
       print('[ready] ERROR: $error');
     });
@@ -124,10 +111,7 @@ class _HelloWorldPageState extends State<HelloWorldPage> {
       // Reset odometer.
       bg.BackgroundGeolocation.start().then((bg.State state) {
         print('[start] success $state');
-        setState(() {
-          _enabled = state.enabled;
-          _isMoving = state.isMoving!;
-        });
+        setState(() => _enabled = state.enabled);
       }).catchError((error) {
         print('[start] ERROR: $error');
       });
@@ -135,37 +119,15 @@ class _HelloWorldPageState extends State<HelloWorldPage> {
       bg.BackgroundGeolocation.stop().then((bg.State state) {
         print('[stop] success: $state');
 
-        setState(() {
-          _enabled = state.enabled;
-          _isMoving = state.isMoving!;
-        });
+        setState(() => _enabled = state.enabled);
       });
     }
-  }
-
-  // Manually toggle the tracking state:  moving vs stationary
-  void _onClickChangePace() {
-    setState(() {
-      _isMoving = !_isMoving;
-    });
-    print("[onClickChangePace] -> $_isMoving");
-
-    bg.BackgroundGeolocation.changePace(_isMoving).then((bool isMoving) {
-      print('[changePace] success $isMoving');
-    }).catchError((e) {
-      print('[changePace] ERROR: ' + e.code.toString());
-    });
   }
 
   void _onLocation(bg.Location location) {
     print('[location] - $location');
 
-    String odometerKM = (location.odometer / 1000.0).toStringAsFixed(1);
-
-    setState(() {
-      _content = encoder.convert(location.toMap());
-      _odometer = odometerKM;
-    });
+    setState(() => _content = encoder.convert(location.toMap()));
   }
 
   void _onLocationError(bg.LocationError error) {
@@ -178,9 +140,6 @@ class _HelloWorldPageState extends State<HelloWorldPage> {
 
   void _onActivityChange(bg.ActivityChangeEvent event) {
     print('[activitychange] - $event');
-    setState(() {
-      _motionActivity = event.activity;
-    });
   }
 
   void _onHttp(bg.HttpEvent event) async {
@@ -208,25 +167,8 @@ class _HelloWorldPageState extends State<HelloWorldPage> {
         appBar: AppBar(
             title: const Text('iOS Demo BG Geo'),
             foregroundColor: Colors.black,
-            actions: <Widget>[
-              Switch(value: _enabled, onChanged: _onClickEnable),
-            ],
+            actions: <Widget>[Switch(value: _enabled, onChanged: _onClickEnable)],
             backgroundColor: Colors.amberAccent),
         body: SingleChildScrollView(child: Text('$_content')),
-        bottomNavigationBar: BottomAppBar(
-            color: Colors.amberAccent,
-            child: Container(
-                padding: const EdgeInsets.only(left: 5.0, right: 5.0),
-                child: Row(
-                    mainAxisSize: MainAxisSize.max,
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: <Widget>[
-                      Text('$_motionActivity · $_odometer km'),
-                      MaterialButton(
-                          minWidth: 50.0,
-                          child: Icon((_isMoving) ? Icons.pause : Icons.play_arrow, color: Colors.white),
-                          color: (_isMoving) ? Colors.red : Colors.green,
-                          onPressed: _onClickChangePace)
-                    ]))),
       );
 }
