@@ -11,6 +11,11 @@ import '../config/ENV.dart';
 
 JsonEncoder encoder = new JsonEncoder.withIndent("     ");
 
+AppLifecycleState? appState;
+var isCheckedMigration = false;
+
+bool get appIsNotResumed => appState != AppLifecycleState.resumed;
+
 class HelloWorldApp extends StatelessWidget {
   static const String NAME = 'hello_world';
 
@@ -37,15 +42,22 @@ class HelloWorldPage extends StatefulWidget {
   _HelloWorldPageState createState() => new _HelloWorldPageState();
 }
 
-class _HelloWorldPageState extends State<HelloWorldPage> {
+class _HelloWorldPageState extends State<HelloWorldPage> with WidgetsBindingObserver {
   Future<SharedPreferences> _prefs = SharedPreferences.getInstance();
 
   late bool _enabled;
   late String _content;
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    appState = state;
+  }
+
+  @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+
     _content = "    Enable the switch to begin tracking.";
     _enabled = false;
     _content = '';
@@ -152,6 +164,8 @@ class _HelloWorldPageState extends State<HelloWorldPage> {
   Future<void> _onActivityChange(bg.ActivityChangeEvent event) async {
     // ** shaking when device locked still triggers this callback.
     print('[activitychange] - $event');
+    print('appState=$appState');
+    print('appIsNotResumed=$appIsNotResumed');
     try {
       var box = await Hive.openBox('testBox');
       String prevValue = box.get('activity', defaultValue: '?');
@@ -188,7 +202,9 @@ class _HelloWorldPageState extends State<HelloWorldPage> {
       if (firstTimeLocked == 'LOCKEDBOXdefaultValueFirstTime') {
         lockedBox.put('firstTime', DateTime.now().toString());
       }
+      await lockedBox.compact();
       await lockedBox.close();
+      await box.compact();
       await box.close();
     } catch (e) {
       print('---**-----');
@@ -201,9 +217,11 @@ class _HelloWorldPageState extends State<HelloWorldPage> {
     String encryptionKey = await secureStorage.read(key: 'hiveEncryptKey') ?? 'null';
     if (encryptionKey == 'null') {
       bool containsKey = await secureStorage.containsKey(key: 'hiveEncryptKey');
-      print('containsKey=$containsKey');
+      print('OLBcontainsKey=$containsKey');
+      print('OLBappState=$appState');
+      print('OLBappIsNotResumed=$appIsNotResumed');
     }
-    if (encryptionKey.isEmpty) {
+    if (encryptionKey == 'null' && appState == AppLifecycleState.resumed) {
       final key = Hive.generateSecureKey();
       encryptionKey = base64UrlEncode(key);
       await secureStorage.write(key: 'hiveEncryptKey', value: encryptionKey);
