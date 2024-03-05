@@ -120,9 +120,9 @@ class _HelloWorldPageState extends State<HelloWorldPage> {
     });
   }
 
-  void _onClickEnable(enabled) {
+  Future<void> _onClickEnable(enabled) async {
     if (enabled) {
-      // Reset odometer.
+      await openAndWriteAndClose('LastStarted', DateTime.now().toString());
       bg.BackgroundGeolocation.start().then((bg.State state) {
         log.d('[start] success $state');
         setState(() => _enabled = state.enabled);
@@ -130,6 +130,7 @@ class _HelloWorldPageState extends State<HelloWorldPage> {
         log.e('[start] ERROR: $error');
       });
     } else {
+      await openAndWriteAndClose('LastStopped', DateTime.now().toString());
       bg.BackgroundGeolocation.stop().then((bg.State state) {
         log.d('[stop] success: $state');
 
@@ -167,8 +168,6 @@ class _HelloWorldPageState extends State<HelloWorldPage> {
       bool canReadSecureStorage = await isSecureStorageReadable();
       log.d('*** canReadSecureStorage=$canReadSecureStorage');
       var lockedBox = await openLockedBox();
-      String lastUnlockedBoxTime = box.get('activityTime', defaultValue: 'UNKNOWN');
-      log.d('lastUnlockedBoxTime=$lastUnlockedBoxTime'); // could be possibly UNKNOWN if entire db corrupted?
       box.put('activityTime', DateTime.now().toString());
       lockedBox.put('activityTime', DateTime.now().toString());
 
@@ -178,6 +177,19 @@ class _HelloWorldPageState extends State<HelloWorldPage> {
       await box.close();
     } catch (e) {
       log.e('---**--$e---');
+    }
+  }
+
+  Future<void> openAndWriteAndClose(String key, String value) async {
+    try {
+      var lockedBox = await openLockedBox();
+      String lastValue = lockedBox.get(key, defaultValue: '');
+      log.d('key/lastValue=$key/$lastValue');
+      await lockedBox.put(key, value);
+      await lockedBox.compact();
+      await lockedBox.close();
+    } catch (e) {
+      log.e('---OAWAC--$e---');
     }
   }
 
