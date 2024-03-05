@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_background_geolocation/flutter_background_geolocation.dart' as bg;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:hive_flutter/adapters.dart';
+import 'package:logger/logger.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../config/ENV.dart';
@@ -12,9 +13,12 @@ import '../config/ENV.dart';
 JsonEncoder encoder = new JsonEncoder.withIndent("     ");
 
 AppLifecycleState? appState;
-var isCheckedMigration = false;
 
-bool get appIsNotResumed => appState != AppLifecycleState.resumed;
+const String hiveKeyIsReadable = 'HiveIsReadableKeyName';
+const String sharedPrefsKeyInitTime = 'SharedPrefsInitTimeKeyName';
+
+Logger log = Logger(printer: PrettyPrinter(printTime: true));
+const secureStorage = FlutterSecureStorage();
 
 class HelloWorldApp extends StatelessWidget {
   static const String NAME = 'hello_world';
@@ -42,21 +46,15 @@ class HelloWorldPage extends StatefulWidget {
   _HelloWorldPageState createState() => new _HelloWorldPageState();
 }
 
-class _HelloWorldPageState extends State<HelloWorldPage> with WidgetsBindingObserver {
+class _HelloWorldPageState extends State<HelloWorldPage> {
   Future<SharedPreferences> _prefs = SharedPreferences.getInstance();
 
   late bool _enabled;
   late String _content;
 
   @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    appState = state;
-  }
-
-  @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this);
 
     _content = "    Enable the switch to begin tracking.";
     _enabled = false;
@@ -87,9 +85,6 @@ class _HelloWorldPageState extends State<HelloWorldPage> with WidgetsBindingObse
     bg.BackgroundGeolocation.onLocation(_onLocation, _onLocationError);
     bg.BackgroundGeolocation.onMotionChange(_onMotionChange);
     bg.BackgroundGeolocation.onActivityChange(_onActivityChange);
-    bg.BackgroundGeolocation.onProviderChange(_onProviderChange);
-    bg.BackgroundGeolocation.onConnectivityChange(_onConnectivityChange);
-    bg.BackgroundGeolocation.onHttp(_onHttp);
     bg.BackgroundGeolocation.onAuthorization(_onAuthorization);
 
     // 2.  Configure the plugin
@@ -129,99 +124,95 @@ class _HelloWorldPageState extends State<HelloWorldPage> with WidgetsBindingObse
     if (enabled) {
       // Reset odometer.
       bg.BackgroundGeolocation.start().then((bg.State state) {
-        print('[start] success $state');
+        log.d('[start] success $state');
         setState(() => _enabled = state.enabled);
       }).catchError((error) {
-        print('[start] ERROR: $error');
+        log.e('[start] ERROR: $error');
       });
     } else {
       bg.BackgroundGeolocation.stop().then((bg.State state) {
-        print('[stop] success: $state');
+        log.d('[stop] success: $state');
 
         setState(() => _enabled = state.enabled);
       });
     }
   }
 
-  void _onLocation(bg.Location location) {
-    print('[location] - $location');
+  Future<void> _onLocation(bg.Location location) async {
+    log.d('[onLocation] - $location;');
+    try {
+      var lockedBox = await openLockedBox();
+      lockedBox.put('locationTime', DateTime.now().toString());
+      var box = await Hive.openBox('testBox');
 
-    setState(() => _content = encoder.convert(location.toMap()));
-  }
-
-  void _onLocationError(bg.LocationError error) {
-    print('[location] ERROR - $error');
-  }
-
-  void _onMotionChange(bg.Location location) {
-    if (location.isMoving) {
-      print('[motionchange-moving] - $location');
-    } else {
-      print('[motionchange-stopped] - $location');
+      box.put('locationTime', DateTime.now().toString());
+      await lockedBox.compact();
+      await lockedBox.close();
+      setState(() => _content = encoder.convert(location.toMap()));
+    } catch (e) {
+      log.e('---**--$e---');
     }
   }
 
+  void _onLocationError(bg.LocationError error) => log.e('[location] ERROR - $error');
+
+  void _onMotionChange(bg.Location location) => log.d('onMotionChange: ${location.isMoving}');
+
   Future<void> _onActivityChange(bg.ActivityChangeEvent event) async {
     // ** shaking when device locked still triggers this callback.
-    print('[activitychange] - $event');
-    print('appState=$appState');
-    print('appIsNotResumed=$appIsNotResumed');
+    log.d('[activitychange] - $event');
     try {
       var box = await Hive.openBox('testBox');
-      String prevValue = box.get('activity', defaultValue: '?');
-
-      String firstTime = box.get('firstTime', defaultValue: 'UNLOCKEDBOXdefaultValueFirstTime');
-      print('UNLfirstTIme=$firstTime');
-      if (firstTime == 'UNLOCKEDBOXdefaultValueFirstTime') {
-        box.put('firstTime', DateTime.now().toString());
-      }
-      box.put('activity', event.toString());
-      box.put('prevActivity', prevValue);
-      /*
-      box.watch().listen((event) {
-        print('UNlockedboxevent: ${event.key}: ${event.value}');
-      });
-
-       */
-
+      await box.put('activityTime', DateTime.now().toString()); // so it for surer has value
+      bool canReadSecureStorage = await isSecureStorageReadable();
+      log.d('*** canReadSecureStorage=$canReadSecureStorage');
       var lockedBox = await openLockedBox();
-      String prevValue2 = lockedBox.get('activity', defaultValue: '?');
-      lockedBox.put('activity', event.toString());
-      lockedBox.put('prevActivity', prevValue2);
-      /*
-      lockedBox.watch().listen((event) {
-        print('lockedboxevent: ${event.key}: ${event.value}');
-      });
+      String lastUnlockedBoxTime = box.get('activityTime', defaultValue: 'UNKNOWN');
+      log.d('lastUnlockedBoxTime=$lastUnlockedBoxTime'); // could be possibly UNKNOWN if entire db corrupted?
+      box.put('activityTime', DateTime.now().toString());
+      lockedBox.put('activityTime', DateTime.now().toString());
 
-       */
-      String firstTimeLocked = lockedBox.get('firstTime', defaultValue: 'LOCKEDBOXdefaultValueFirstTime');
-      print('LfirstTIme=$firstTimeLocked');
-
-      /// see https://github.com/isar/hive/issues/192
-      /// Recovering corrupted box.
-      if (firstTimeLocked == 'LOCKEDBOXdefaultValueFirstTime') {
-        lockedBox.put('firstTime', DateTime.now().toString());
-      }
       await lockedBox.compact();
       await lockedBox.close();
       await box.compact();
       await box.close();
     } catch (e) {
-      print('---**-----');
-      print(e.toString());
+      log.e('---**--$e---');
     }
   }
 
+  Future<bool> isReadWriteOk() async {
+    String nowString = DateTime.now().toString();
+    await secureStorage.write(key: hiveKeyIsReadable, value: nowString);
+    String? nowStringFromSecureStorage = await secureStorage.read(key: hiveKeyIsReadable);
+    if (nowString == nowStringFromSecureStorage) {
+      return true;
+    } else {
+      bool containsKey = await secureStorage.containsKey(key: hiveKeyIsReadable);
+      log.e('containsIsReadableKey=$containsKey');
+      return false;
+    }
+  }
+
+  Future<bool> isSecureStorageReadable() async {
+    bool isWriteReadOKPassed = await isReadWriteOk();
+
+    return isWriteReadOKPassed;
+  }
+
   Future<Box> openLockedBox() async {
-    const secureStorage = FlutterSecureStorage();
+    bool canReadSecureStorage = await isSecureStorageReadable();
+    if (!canReadSecureStorage) {
+      log.e('cannot read secure storage, return null for box and nothing breaks');
+      //return null;
+      //throw Exception('do not open box if storage is not readable');
+    }
     String encryptionKey = await secureStorage.read(key: 'hiveEncryptKey') ?? 'null';
     if (encryptionKey == 'null') {
       bool containsKey = await secureStorage.containsKey(key: 'hiveEncryptKey');
-      print('OLBcontainsKey=$containsKey');
-      print('OLBappState=$appState');
-      print('OLBappIsNotResumed=$appIsNotResumed');
+      log.e('containsKey=$containsKey; canReadSecureStorage=$canReadSecureStorage ');
     }
-    if (encryptionKey == 'null' && appState == AppLifecycleState.resumed) {
+    if (encryptionKey == 'null') {
       final key = Hive.generateSecureKey();
       encryptionKey = base64UrlEncode(key);
       await secureStorage.write(key: 'hiveEncryptKey', value: encryptionKey);
@@ -231,25 +222,8 @@ class _HelloWorldPageState extends State<HelloWorldPage> with WidgetsBindingObse
     return await Hive.openBox('lockedbox', encryptionCipher: HiveAesCipher(realKey));
   }
 
-  void _onHttp(bg.HttpEvent event) async {
-    print('[${bg.Event.HTTP}] - $event');
-  }
-
-  void _onAuthorization(bg.AuthorizationEvent event) async {
-    print('[${bg.Event.AUTHORIZATION}] = $event');
-
-    bg.BackgroundGeolocation.setConfig(bg.Config(url: ENV.TRACKER_HOST + '/api/locations'));
-  }
-
-  void _onProviderChange(bg.ProviderChangeEvent event) {
-    print('$event');
-
-    setState(() => _content = encoder.convert(event.toMap()));
-  }
-
-  void _onConnectivityChange(bg.ConnectivityChangeEvent event) {
-    print('$event');
-  }
+  void _onAuthorization(bg.AuthorizationEvent event) async =>
+      bg.BackgroundGeolocation.setConfig(bg.Config(url: ENV.TRACKER_HOST + '/api/locations'));
 
   @override
   Widget build(BuildContext context) => Scaffold(
