@@ -20,7 +20,13 @@ const String hiveKeyLastStarted = 'LastStartedKeyName';
 const String hiveKeyLastStopped = 'LastStoppedKeyName';
 
 Logger log = Logger(printer: PrettyPrinter(printTime: true));
-const secureStorage = FlutterSecureStorage();
+const secureStorageCanMock = FlutterSecureStorage(
+    iOptions: IOSOptions(accessibility: KeychainAccessibility.unlocked_this_device),
+    mOptions: MacOsOptions(accessibility: KeychainAccessibility.unlocked_this_device));
+
+const secureStorageMostlyUnlocked = FlutterSecureStorage(
+    iOptions: IOSOptions(accessibility: KeychainAccessibility.unlocked_this_device),
+    mOptions: MacOsOptions(accessibility: KeychainAccessibility.unlocked_this_device));
 
 class HelloWorldApp extends StatelessWidget {
   static const String NAME = 'hello_world';
@@ -183,12 +189,12 @@ class _HelloWorldPageState extends State<HelloWorldPage> {
 
   Future<bool> isReadWriteOk() async {
     String nowString = DateTime.now().toString();
-    await secureStorage.write(key: hiveKeyIsReadable, value: nowString);
-    String? nowStringFromSecureStorage = await secureStorage.read(key: hiveKeyIsReadable);
+    await secureStorageCanMock.write(key: hiveKeyIsReadable, value: nowString);
+    String? nowStringFromSecureStorage = await secureStorageCanMock.read(key: hiveKeyIsReadable);
     if (nowString == nowStringFromSecureStorage) {
       return true;
     } else {
-      bool containsKey = await secureStorage.containsKey(key: hiveKeyIsReadable);
+      bool containsKey = await secureStorageCanMock.containsKey(key: hiveKeyIsReadable);
       log.e('containsIsReadableKey=$containsKey');
       return false;
     }
@@ -210,12 +216,12 @@ class _HelloWorldPageState extends State<HelloWorldPage> {
       // by writing /lastValue=LastStarted/
       // and
     }
-    String? encryptionKeyString = await secureStorage.read(key: 'hiveEncryptKey');
+    String? encryptionKeyString = await secureStorageCanMock.read(key: 'hiveEncryptKey');
     bool shouldGenerateNewEncryptionCipher = false;
 
     if (encryptionKeyString == null) {
       shouldGenerateNewEncryptionCipher = true;
-      bool containsKey = await secureStorage.containsKey(key: 'hiveEncryptKey');
+      bool containsKey = await secureStorageCanMock.containsKey(key: 'hiveEncryptKey');
       log.e('containsKey=$containsKey; canReadSecureStorage=$canReadSecureStorage ');
     } else {
       log.d("encryption key found, length=${encryptionKeyString.length}");
@@ -224,13 +230,13 @@ class _HelloWorldPageState extends State<HelloWorldPage> {
     if (shouldGenerateNewEncryptionCipher) {
       final listIntFromFortunaRandomAlgorithm = Hive.generateSecureKey();
       encryptionKeyString = base64UrlEncode(listIntFromFortunaRandomAlgorithm);
-      await secureStorage.write(key: 'hiveEncryptKey', value: encryptionKeyString);
+      await secureStorageCanMock.write(key: 'hiveEncryptKey', value: encryptionKeyString);
       newBase64UrlEncodedStringWrittenToSecureStorage = true;
     } else {
       log.d('already has key');
     }
 
-    encryptionKeyString = await secureStorage.read(key: 'hiveEncryptKey');
+    encryptionKeyString = await secureStorageCanMock.read(key: 'hiveEncryptKey');
     if (encryptionKeyString == null || encryptionKeyString.isEmpty) {
       if (canReadSecureStorage) {
         log.e('encryption key should never be null or empty if can read secure storage');
