@@ -16,6 +16,8 @@ AppLifecycleState? appState;
 
 const String hiveKeyIsReadable = 'HiveIsReadableKeyName';
 const String sharedPrefsKeyInitTime = 'SharedPrefsInitTimeKeyName';
+const String hiveKeyLastStarted = 'LastStartedKeyName';
+const String hiveKeyLastStopped = 'LastStoppedKeyName';
 
 Logger log = Logger(printer: PrettyPrinter(printTime: true));
 const secureStorage = FlutterSecureStorage();
@@ -26,6 +28,9 @@ class HelloWorldApp extends StatelessWidget {
   // This widget is the root of your application.
   @override
   Widget build(BuildContext context) {
+    print('build method of HelloWorldapp');
+    debugPrint('buildmethod of hellowroldapp');
+    log.d('build method of hello world app');
     final ThemeData theme = ThemeData();
     return new MaterialApp(
       title: 'BackgroundGeolocation Demo',
@@ -66,7 +71,8 @@ class _HelloWorldPageState extends State<HelloWorldPage> {
     SharedPreferences prefs = await _prefs;
     String orgname = prefs.getString("orgname") ?? '';
     String username = prefs.getString("username") ?? '';
-
+    orgname = 'njwtest';
+    username = 'njwtest';
     if (orgname.isEmpty || username.isEmpty) {
       throw Exception('must have org and username');
     }
@@ -122,10 +128,13 @@ class _HelloWorldPageState extends State<HelloWorldPage> {
 
   Future<void> _onClickEnable(enabled) async {
     if (enabled) {
-      await openAndWriteAndClose('LastStarted', DateTime.now().toString());
+      //  await openAndWriteAndClose(lastStartedKey, DateTime.now().toString());
       bg.BackgroundGeolocation.start().then((bg.State state) {
         log.d('[start] success $state');
-        setState(() => _enabled = state.enabled);
+        setState(() {
+          _enabled = state.enabled;
+          //_content = await getStartStopInfo();
+        });
       }).catchError((error) {
         log.e('[start] ERROR: $error');
       });
@@ -141,18 +150,7 @@ class _HelloWorldPageState extends State<HelloWorldPage> {
 
   Future<void> _onLocation(bg.Location location) async {
     log.d('[onLocation] - $location;');
-    try {
-      var lockedBox = await openLockedBox();
-      lockedBox.put('locationTime', DateTime.now().toString());
-      var box = await Hive.openBox('testBox');
-
-      box.put('locationTime', DateTime.now().toString());
-      await lockedBox.compact();
-      await lockedBox.close();
-      setState(() => _content = encoder.convert(location.toMap()));
-    } catch (e) {
-      log.e('---**--$e---');
-    }
+    await openAndWriteAndClose('locationtime', DateTime.now().toString());
   }
 
   void _onLocationError(bg.LocationError error) => log.e('[location] ERROR - $error');
@@ -162,34 +160,24 @@ class _HelloWorldPageState extends State<HelloWorldPage> {
   Future<void> _onActivityChange(bg.ActivityChangeEvent event) async {
     // ** shaking when device locked still triggers this callback.
     log.d('[activitychange] - $event');
-    try {
-      var box = await Hive.openBox('testBox');
-      await box.put('activityTime', DateTime.now().toString()); // so it for surer has value
-      bool canReadSecureStorage = await isSecureStorageReadable();
-      log.d('*** canReadSecureStorage=$canReadSecureStorage');
-      var lockedBox = await openLockedBox();
-      box.put('activityTime', DateTime.now().toString());
-      lockedBox.put('activityTime', DateTime.now().toString());
-
-      await lockedBox.compact();
-      await lockedBox.close();
-      await box.compact();
-      await box.close();
-    } catch (e) {
-      log.e('---**--$e---');
-    }
+    await openAndWriteAndClose('activityTime', DateTime.now().toString());
   }
 
   Future<void> openAndWriteAndClose(String key, String value) async {
     try {
-      var lockedBox = await openLockedBox();
-      String lastValue = lockedBox.get(key, defaultValue: '');
-      log.d('key/lastValue=$key/$lastValue');
-      await lockedBox.put(key, value);
-      await lockedBox.compact();
-      await lockedBox.close();
+      bool canReadSecureStorage = await isSecureStorageReadable();
+      log.d('*** canReadSecureStorage=$canReadSecureStorage');
+      if (canReadSecureStorage) {
+        var lockedBox = await openLockedBox();
+        lockedBox.put(key, value);
+
+        await lockedBox.compact();
+        await lockedBox.close();
+      } else {
+        log.e('cannot read secure storage');
+      }
     } catch (e) {
-      log.e('---OAWAC--$e---');
+      log.e('---**--$e---');
     }
   }
 
@@ -218,20 +206,51 @@ class _HelloWorldPageState extends State<HelloWorldPage> {
       log.e('cannot read secure storage, return null for box and nothing breaks');
       //return null;
       //throw Exception('do not open box if storage is not readable');
+      // with no code here to handle, this branch confirms that db can be corrupted
+      // by writing /lastValue=LastStarted/
+      // and
     }
-    String encryptionKey = await secureStorage.read(key: 'hiveEncryptKey') ?? 'null';
-    if (encryptionKey == 'null') {
+    String? encryptionKeyString = await secureStorage.read(key: 'hiveEncryptKey');
+    bool shouldGenerateNewEncryptionCipher = false;
+
+    if (encryptionKeyString == null) {
+      shouldGenerateNewEncryptionCipher = true;
       bool containsKey = await secureStorage.containsKey(key: 'hiveEncryptKey');
       log.e('containsKey=$containsKey; canReadSecureStorage=$canReadSecureStorage ');
+    } else {
+      log.d("encryption key found, length=${encryptionKeyString.length}");
     }
-    if (encryptionKey == 'null') {
-      final key = Hive.generateSecureKey();
-      encryptionKey = base64UrlEncode(key);
-      await secureStorage.write(key: 'hiveEncryptKey', value: encryptionKey);
+    bool newBase64UrlEncodedStringWrittenToSecureStorage = false;
+    if (shouldGenerateNewEncryptionCipher) {
+      final listIntFromFortunaRandomAlgorithm = Hive.generateSecureKey();
+      encryptionKeyString = base64UrlEncode(listIntFromFortunaRandomAlgorithm);
+      await secureStorage.write(key: 'hiveEncryptKey', value: encryptionKeyString);
+      newBase64UrlEncodedStringWrittenToSecureStorage = true;
+    } else {
+      log.d('already has key');
     }
-    final realKey = base64Url.decode(encryptionKey);
 
-    return await Hive.openBox('lockedbox', encryptionCipher: HiveAesCipher(realKey));
+    encryptionKeyString = await secureStorage.read(key: 'hiveEncryptKey');
+    if (encryptionKeyString == null || encryptionKeyString.isEmpty) {
+      if (canReadSecureStorage) {
+        log.e('encryption key should never be null or empty if can read secure storage');
+        throw Exception('WTF: encryption key should never be null or empty after try to generate new key');
+      } else {
+        log.e('cannot get to encryption cipher, throw exception');
+        throw Exception('cannot get to encryption key, throw exception instead of open box');
+      }
+    }
+    final uInt8ListKey = base64Url.decode(encryptionKeyString);
+    if (!canReadSecureStorage) {
+      throw Exception('cant rread secure storage, do not open box');
+    }
+    return await Hive.openBox('lockedbox', encryptionCipher: HiveAesCipher(uInt8ListKey));
+  }
+
+  Future<bool> shouldGenerateNewKey() async {
+    // If it ever generates a new key and uses it, corrupts db
+    // return true for testing purposes only.
+    return true;
   }
 
   void _onAuthorization(bg.AuthorizationEvent event) async =>
